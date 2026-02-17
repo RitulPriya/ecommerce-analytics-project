@@ -1,1 +1,172 @@
 
+-- 1. DATA LOAD VALIDATION
+-- Total records in raw dataset
+SELECT COUNT(*) AS total_raw_records
+FROM e_comm_raw;
+
+-- Total records in processed dataset
+SELECT COUNT(*) AS total_processed_records
+FROM e_comm_processed;
+
+-- 2. INVOICE ID INTEGRITY CHECKS
+
+-- NULL or blank invoice IDs
+SELECT COUNT(*) AS null_or_blank_invoice_id
+FROM e_comm_raw
+WHERE invoice_id IS NULL
+OR TRIM(invoice_id) = '';
+
+-- Distinct invoice count
+SELECT COUNT(DISTINCT invoice_id) AS distinct_invoice_count
+FROM e_comm_raw;
+
+-- 3. INVOICE PATTERN VALIDATION
+
+-- Identify non-standard invoice patterns
+SELECT invoice_id
+FROM (
+SELECT
+invoice_id,
+CASE
+WHEN invoice_id LIKE 'C%' THEN 'CREDIT'
+WHEN invoice_id LIKE '5%' THEN 'SALE'
+ELSE 'OTHER'
+END AS invoice_type
+FROM e_comm_raw
+) a
+WHERE invoice_type = 'OTHER';
+
+-- Count unexpected invoice groups
+SELECT invoice_id, COUNT(*) AS row_count
+FROM e_comm_raw
+WHERE invoice_id IS NOT NULL
+AND TRIM(invoice_id) <> ''
+AND TRIM(invoice_id) NOT LIKE '5%'
+AND TRIM(invoice_id) NOT LIKE 'C%'
+GROUP BY invoice_id;
+
+-- 4. ADJUSTMENT INVOICE VALIDATION
+
+SELECT COUNT(DISTINCT invoice_id) AS adjustment_invoices
+FROM e_comm_raw
+WHERE invoice_id LIKE 'A%'
+AND quant > 0;
+
+-- 5. TRANSACTION MIX VALIDATION
+
+-- Invoices containing both sales and returns
+SELECT COUNT(*) AS mixed_transaction_invoices
+FROM (
+SELECT invoice_id
+FROM e_comm_raw
+GROUP BY invoice_id
+HAVING
+SUM(CASE WHEN quant > 0 THEN 1 ELSE 0 END) > 0
+AND
+SUM(CASE WHEN quant < 0 THEN 1 ELSE 0 END) > 0
+) t;
+
+-- 6. DUPLICATE DETECTION – RAW DATA
+
+SELECT COUNT(*) AS duplicate_transaction_groups
+FROM (
+SELECT COUNT(*)
+FROM e_comm_raw
+GROUP BY
+invoice_id,
+stock_cd,
+descr,
+quant,
+invoice_dt,
+unit_pr,
+customer_id,
+country
+HAVING COUNT(*) > 1
+) t;
+
+
+-- 7. ZERO QUANTITY VALIDATION
+SELECT COUNT(*) AS zero_quantity_rows
+FROM e_comm_raw
+WHERE quant = 0;
+
+-- 8. DUPLICATE VALIDATION – PROCESSED DATA
+
+
+SELECT COUNT(*) AS duplicate_processed_records
+FROM (
+SELECT COUNT(*)
+FROM e_comm_processed
+GROUP BY
+invoice_id,
+stock_cd,
+descr,
+quant,
+invoice_dt,
+unit_pr,
+customer_id,
+country
+HAVING COUNT(*) > 1
+) t;
+
+-- 9. NEGATIVE QUANTITY VALIDATION
+
+SELECT COUNT(DISTINCT invoice_id) AS negative_quantity_invoices
+FROM e_comm_processed
+WHERE quant < 0;
+
+-- 10. DESCRIPTION QUALITY CHECK
+
+SELECT COUNT(*) AS blank_descriptions
+FROM e_comm_processed
+WHERE descr IS NULL
+OR TRIM(descr) = '';
+
+-- 11. PRODUCT FLAG DISTRIBUTION
+
+SELECT
+product_flag,
+COUNT(*) AS record_count
+FROM e_comm_processed
+GROUP BY product_flag;
+
+-- 12. CUSTOMER ID VALIDATION
+
+SELECT
+SUM(customer_id IS NULL) AS missing_customers,
+SUM(customer_id IS NOT NULL) AS known_customers
+FROM e_comm_processed;
+
+-- 13. REVENUE NULL CHECK
+
+SELECT COUNT(*) AS null_revenue_rows
+FROM e_comm_processed
+WHERE revenue IS NULL;
+
+-- 14. PRICE DISTRIBUTION VALIDATION
+
+SELECT
+SUM(unit_pr < 0) AS negative_price,
+SUM(unit_pr = 0) AS zero_price,
+SUM(unit_pr > 0) AS positive_price
+FROM e_comm_processed;
+
+-- 15. DATE RANGE VALIDATION
+
+SELECT
+MIN(invoice_dt) AS min_invoice_date,
+MAX(invoice_dt) AS max_invoice_date
+FROM e_comm_processed;
+
+-- 16. FINAL INVOICE ID VALIDATION
+
+SELECT COUNT(*)
+FROM e_comm_processed
+WHERE invoice_id IS NULL;
+
+SELECT COUNT(*)
+FROM e_comm_processed
+WHERE TRIM(invoice_id) = '';
+
+-- END OF DATA VALIDATION SCRIPT
+
