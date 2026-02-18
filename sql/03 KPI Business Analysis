@@ -1,1 +1,199 @@
 
+
+-- 1. EXECUTIVE SUMMARY KPIs
+
+
+-- TOTAL ORDERS
+SELECT
+COUNT(invoice_id) AS total_orders
+FROM e_comm_processed ;
+
+-- TOTAL CUSTOMERS
+SELECT
+COUNT(DISTINCT customer_id) AS total_customers
+FROM e_comm_processed
+WHERE invoice_flag = 'SALE'
+AND customer_id IS NOT NULL;
+
+-- GROSS REVENUE (SALES ONLY)
+SELECT
+SUM(revenue) AS total_revenue
+FROM e_comm_processed
+WHERE invoice_flag = 'SALE';
+
+-- NET REVENUE
+SELECT
+SUM(CASE WHEN invoice_flag ='SALE' THEN revenue END)- SUM(ABS(CASE WHEN invoice_flag='RETURN' THEN revenue END)) 
+AS net_revenue FROM e_comm_processed;
+
+-- RETURN RATE (%)
+SELECT
+SUM(ABS(CASE WHEN invoice_flag = 'RETURN' THEN quant END)) /
+(
+SUM(ABS(CASE WHEN invoice_flag = 'RETURN' THEN quant END)) +
+SUM(CASE WHEN invoice_flag = 'SALE' THEN quant END)
+) * 100 AS return_rate_pct
+FROM e_comm_processed;
+
+-- MONTHLY REVENUE TREND
+SELECT
+EXTRACT(YEAR FROM invoice_dt) AS order_year,
+EXTRACT(MONTH FROM invoice_dt) AS order_month,
+SUM(revenue) AS monthly_revenue
+FROM e_comm_processed
+WHERE invoice_flag = 'SALE'
+GROUP BY order_year, order_month
+ORDER BY order_year, order_month;
+
+-- RETURN AMOUNT
+SELECT
+ABS(SUM(revenue)) AS total_revenue
+FROM e_comm_processed
+WHERE invoice_flag = 'RETURN';
+
+
+-- 2. SALES SUMMARY KPIs
+
+-- MONTHLY QUANTITY SOLD
+SELECT
+EXTRACT(YEAR FROM Invoice_dt) AS OrderYear,
+EXTRACT(MONTH FROM Invoice_dt) AS OrderMonth, 
+SUM(quant)
+from e_comm_processed 
+WHERE invoice_flag='SALE'
+AND product_flag = 'PRODUCT'
+GROUP BY 1,2 
+ORDER BY OrderYear;
+
+-- TOP 5 PRODUCTS BY REVENUE
+SELECT
+stock_cd,
+descr,
+SUM(revenue) AS product_revenue
+FROM e_comm_processed
+WHERE invoice_flag = 'SALE'
+AND product_flag = 'PRODUCT'
+GROUP BY stock_cd, descr
+ORDER BY product_revenue DESC
+LIMIT 5;
+
+-- TOP 5 PRODUCTS BY QAUNTITY SOLD
+SELECT
+stock_cd,
+descr,
+SUM(quant) AS units_sold
+FROM e_comm_processed
+WHERE invoice_flag = 'SALE'
+AND product_flag = 'PRODUCT'
+GROUP BY stock_cd, descr
+ORDER BY units_sold DESC
+LIMIT 5;
+
+-- TOP 5 COUNTRIES BY REVENUE
+SELECT
+country,
+SUM(revenue) AS country_revenue
+FROM e_comm_processed
+WHERE invoice_flag = 'SALE'
+GROUP BY country
+ORDER BY country_revenue DESC
+LIMIT 5;
+
+-- 3. CUSTOMER AND GEOGRAPHY SUMMARY KPIs
+
+-- TOP 10 REPEATED CUSTOMERS
+SELECT
+customer_id,
+COUNT(DISTINCT invoice_id) AS order_count
+FROM e_comm_processed
+WHERE invoice_flag = 'SALE'
+AND customer_id IS NOT NULL
+GROUP BY customer_id
+HAVING COUNT(DISTINCT invoice_id) > 1
+ORDER BY COUNT(DISTINCT invoice_id) DESC
+LIMIT 10;
+
+
+-- TOP 10 COUNTRIES BY AOV
+SELECT
+country,
+SUM(revenue) / COUNT(DISTINCT invoice_id) AS country_aov
+FROM e_comm_processed
+WHERE invoice_flag = 'SALE'
+GROUP BY country
+ORDER BY country_aov DESC
+LIMIT 10
+;
+
+-- TOP 5 COUNTRIES BY CUSTOMER
+SELECT
+country,
+COUNT(DISTINCT customer_id) AS customer_count
+FROM e_comm_processed
+WHERE invoice_flag = 'SALE'
+AND customer_id IS NOT NULL
+GROUP BY country
+ORDER BY customer_count DESC
+LIMIT 10;
+
+-- NEW VS REPEATED CUSTOMERS
+
+SELECT
+    CASE
+        WHEN order_count = 1 THEN 'New Customer'
+        ELSE 'Repeating Customer'
+    END AS customer_type,
+    COUNT(*) AS customer_count
+FROM (
+    SELECT
+        customer_id,
+        COUNT(DISTINCT invoice_id) AS order_count
+    FROM e_comm_processed
+    WHERE invoice_flag = 'SALE'
+	AND customer_id IS NOT NULL
+    GROUP BY customer_id
+) t
+GROUP BY customer_type;
+
+-- 4. RETURN AND QUALITY ANALYSIS SUMMARY KPIs
+
+-- RETURN REVENUE
+SELECT
+ABS(SUM(revenue)) AS total_return_revenue
+FROM e_comm_processed
+WHERE invoice_flag = 'RETURN';
+
+-- Top 10 PRODUCTS BY RETURN QUANTITY 
+SELECT
+    descr,
+    SUM(ABS(quant)) AS return_quantity
+FROM e_comm_processed
+WHERE invoice_flag = 'RETURN'
+  AND product_flag = 'PRODUCT'
+GROUP BY descr
+ORDER BY return_quantity DESC
+LIMIT 10;
+
+-- TOP 10 COUNTRIES BY RETURN RATE
+SELECT
+country,
+ABS(SUM(CASE WHEN invoice_flag = 'RETURN' THEN quant ELSE 0 END)) /
+(
+SUM(CASE WHEN invoice_flag = 'SALE' THEN quant ELSE 0 END) +
+ABS(SUM(CASE WHEN invoice_flag = 'RETURN' THEN quant ELSE 0 END))
+) * 100 AS return_rate_pct
+FROM e_comm_processed
+WHERE product_flag = 'PRODUCT'
+GROUP BY country
+ORDER BY return_rate_pct DESC
+LIMIT 10 ;
+
+-- RETURN AMOUNT YEAR-MONTH
+SELECT
+DATE_FORMAT(invoice_dt, '%Y-%m') AS return_month,
+ABS(SUM(revenue)) AS returned_units
+FROM e_comm_processed
+WHERE invoice_flag = 'RETURN'
+GROUP BY return_month
+ORDER BY return_month;
+
